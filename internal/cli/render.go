@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/fatih/color"
@@ -12,6 +14,8 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/tw"
 	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -121,31 +125,43 @@ func RenderJSON(result *core.ScanResult) {
 	enc.Encode(result)
 }
 
-func RenderTimings(exp *tracing.CollectingExporter) {
-	if exp == nil {
-		return
+type parsedSpans struct {
+	findReposDur time.Duration
+	processDur   time.Duration
+	processStart time.Time
+	analyzes     []analyzeInfo
+	children     map[trace.SpanID][]childSpan
+}
+
+type analyzeInfo struct {
+	repo   string
+	start  time.Time
+	end    time.Time
+	dur    time.Duration
+	spanID trace.SpanID
+}
+
+type childSpan struct {
+	name   string
+	start  time.Time
+	end    time.Time
+	dur    time.Duration
+	spanID trace.SpanID
+}
+
+func parseSpans(spans []sdktrace.ReadOnlySpan) parsedSpans {
+	p := parsedSpans{
+		children: make(map[trace.SpanID][]childSpan),
 	}
-
-	spans := exp.Spans()
-
-	type analyzeSpan struct {
-		repo     string
-		duration time.Duration
-	}
-
-	var findReposDur, processDur time.Duration
-	var analyzeSpans []analyzeSpan
-	childSpans := make(map[string]map[string]time.Duration)
 
 	for _, s := range spans {
 		dur := s.EndTime().Sub(s.StartTime())
-		name := s.Name()
-
-		switch name {
+		switch s.Name() {
 		case "find_repos":
-			findReposDur = dur
+			p.findReposDur = dur
 		case "process":
-			processDur = dur
+			p.processDur = dur
+			p.processStart = s.StartTime()
 		case "analyze":
 			repo := ""
 			for _, attr := range s.Attributes() {
@@ -153,79 +169,189 @@ func RenderTimings(exp *tracing.CollectingExporter) {
 					repo = attr.Value.AsString()
 				}
 			}
-			analyzeSpans = append(analyzeSpans, analyzeSpan{repo: repo, duration: dur})
+			p.analyzes = append(p.analyzes, analyzeInfo{
+				repo:   repo,
+				start:  s.StartTime(),
+				end:    s.EndTime(),
+				dur:    dur,
+				spanID: s.SpanContext().SpanID(),
+			})
 		default:
 			parent := s.Parent()
 			if !parent.IsValid() {
 				continue
 			}
-			pid := parent.SpanID().String()
-			if childSpans[pid] == nil {
-				childSpans[pid] = make(map[string]time.Duration)
-			}
-			childSpans[pid][name] = dur
+			p.children[parent.SpanID()] = append(p.children[parent.SpanID()], childSpan{
+				name:   s.Name(),
+				start:  s.StartTime(),
+				end:    s.EndTime(),
+				dur:    dur,
+				spanID: s.SpanContext().SpanID(),
+			})
 		}
 	}
+
+	sort.Slice(p.analyzes, func(i, j int) bool {
+		return p.analyzes[i].start.Before(p.analyzes[j].start)
+	})
+
+	return p
+}
+
+func RenderTimings(exp *tracing.CollectingExporter) {
+	if exp == nil {
+		return
+	}
+
+	p := parseSpans(exp.Spans())
 
 	fmt.Printf("\n%s  Performance Breakdown\n", cyan("⏱"))
-	fmt.Printf("  %-20s %s\n", "Directory scan:", findReposDur.Round(time.Millisecond))
-	fmt.Printf("  %-20s %s\n", "Analysis (total):", processDur.Round(time.Millisecond))
+	fmt.Printf("  %-20s %s\n", "Directory scan:", p.findReposDur.Round(time.Millisecond))
+	fmt.Printf("  %-20s %s\n", "Analysis (total):", p.processDur.Round(time.Millisecond))
 
-	if len(analyzeSpans) > 0 {
-		minDur := analyzeSpans[0].duration
-		var maxDur, sum time.Duration
-		var slowestIdx int
-		for i, as := range analyzeSpans {
-			sum += as.duration
-			if as.duration < minDur {
-				minDur = as.duration
-			}
-			if as.duration > maxDur {
-				maxDur = as.duration
-				slowestIdx = i
-			}
+	if len(p.analyzes) == 0 {
+		fmt.Println()
+		return
+	}
+
+	minDur := p.analyzes[0].dur
+	var maxDur, sum time.Duration
+	var slowestIdx int
+	for i, a := range p.analyzes {
+		sum += a.dur
+		if a.dur < minDur {
+			minDur = a.dur
 		}
-		avg := sum / time.Duration(len(analyzeSpans))
+		if a.dur > maxDur {
+			maxDur = a.dur
+			slowestIdx = i
+		}
+	}
+	avg := sum / time.Duration(len(p.analyzes))
 
-		fmt.Printf("  %-20s min=%s avg=%s max=%s\n", "Per-repo:",
-			minDur.Round(time.Millisecond),
-			avg.Round(time.Millisecond),
-			maxDur.Round(time.Millisecond))
+	fmt.Printf("  %-20s min=%s avg=%s max=%s\n", "Per-repo:",
+		minDur.Round(time.Millisecond),
+		avg.Round(time.Millisecond),
+		maxDur.Round(time.Millisecond))
 
-		slowest := analyzeSpans[slowestIdx]
+	renderWaterfall(p)
+	renderSpanTree(p, slowestIdx)
 
-		var slowestSpanID string
-		for _, s := range spans {
-			if s.Name() != "analyze" {
-				continue
-			}
-			dur := s.EndTime().Sub(s.StartTime())
-			if dur == slowest.duration {
-				slowestSpanID = s.SpanContext().SpanID().String()
-				break
-			}
+	fmt.Println()
+}
+
+const waterfallWidth = 50
+
+func renderWaterfall(p parsedSpans) {
+	if len(p.analyzes) == 0 {
+		return
+	}
+
+	totalDur := p.processDur
+	if totalDur == 0 {
+		return
+	}
+
+	maxNameLen := 0
+	for _, a := range p.analyzes {
+		if len(a.repo) > maxNameLen {
+			maxNameLen = len(a.repo)
+		}
+	}
+	if maxNameLen > 20 {
+		maxNameLen = 20
+	}
+
+	yellow := color.New(color.FgYellow).SprintFunc()
+
+	fmt.Printf("\n  %s  Waterfall (%s)\n", cyan("▸"), totalDur.Round(time.Millisecond))
+
+	for _, a := range p.analyzes {
+		offset := a.start.Sub(p.processStart)
+		startCol := int(float64(offset) / float64(totalDur) * waterfallWidth)
+		barLen := int(float64(a.dur) / float64(totalDur) * waterfallWidth)
+		if barLen < 1 {
+			barLen = 1
+		}
+		if startCol+barLen > waterfallWidth {
+			barLen = waterfallWidth - startCol
+		}
+		if startCol < 0 {
+			startCol = 0
 		}
 
-		fmt.Printf("\n  %s  Slowest repo: %s (%s)\n", dim("▸"), slowest.repo, slowest.duration.Round(time.Millisecond))
-
-		breakdown := childSpans[slowestSpanID]
-		labels := []struct{ name, label string }{
-			{"plain_open", "PlainOpen:"},
-			{"branch", "Branch:"},
-			{"worktree_status", "WorktreeStatus:"},
-			{"last_commit", "LastCommit:"},
-			{"remote_status", "RemoteStatus:"},
-			{"recent_commits", "RecentCommits:"},
-			{"lines_changed", "LinesChanged:"},
+		name := a.repo
+		if len(name) > maxNameLen {
+			name = name[:maxNameLen-1] + "…"
 		}
-		for _, l := range labels {
-			if d, ok := breakdown[l.name]; ok {
-				fmt.Printf("    %-18s %s\n", l.label, d.Round(time.Millisecond))
-			}
+
+		bar := strings.Repeat(" ", startCol) + yellow(strings.Repeat("█", barLen)) + strings.Repeat(" ", waterfallWidth-startCol-barLen)
+		fmt.Printf("  %-*s %s %s\n", maxNameLen, name, bar, dim(a.dur.Round(time.Millisecond).String()))
+	}
+}
+
+func renderSpanTree(p parsedSpans, slowestIdx int) {
+	slowest := p.analyzes[slowestIdx]
+
+	fmt.Printf("\n  %s  Slowest: %s (%s)\n", cyan("▸"), slowest.repo, slowest.dur.Round(time.Millisecond))
+
+	if slowest.dur == 0 {
+		return
+	}
+
+	renderChildren(p, slowest.spanID, slowest.start, slowest.dur, "    ")
+}
+
+func renderChildren(p parsedSpans, parentID trace.SpanID, rootStart time.Time, totalDur time.Duration, indent string) {
+	children := p.children[parentID]
+	if len(children) == 0 {
+		return
+	}
+
+	sort.Slice(children, func(i, j int) bool {
+		return children[i].start.Before(children[j].start)
+	})
+
+	barWidth := 30
+	maxNameLen := 0
+	for _, c := range children {
+		if len(c.name) > maxNameLen {
+			maxNameLen = len(c.name)
 		}
 	}
 
-	fmt.Println()
+	for i, c := range children {
+		isLast := i == len(children)-1
+		connector := "├─"
+		if isLast {
+			connector = "└─"
+		}
+
+		offset := c.start.Sub(rootStart)
+		startCol := int(float64(offset) / float64(totalDur) * float64(barWidth))
+		barLen := int(float64(c.dur) / float64(totalDur) * float64(barWidth))
+		if barLen < 1 {
+			barLen = 1
+		}
+		if startCol < 0 {
+			startCol = 0
+		}
+		if startCol+barLen > barWidth {
+			barLen = barWidth - startCol
+		}
+
+		bar := strings.Repeat("░", startCol) + strings.Repeat("█", barLen) + strings.Repeat("░", barWidth-startCol-barLen)
+		fmt.Printf("%s%s %-*s %s %s\n", indent, dim(connector), maxNameLen, c.name, dim(bar), dim(c.dur.Round(time.Millisecond).String()))
+
+		grandchildren := p.children[c.spanID]
+		if len(grandchildren) > 0 {
+			childIndent := indent + "│  "
+			if isLast {
+				childIndent = indent + "   "
+			}
+			renderChildren(p, c.spanID, rootStart, totalDur, childIndent)
+		}
+	}
 }
 
 func timeAgo(t time.Time) string {

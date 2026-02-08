@@ -48,8 +48,8 @@ func (a *Analyzer) Analyze(ctx context.Context, repoPath string) (*RepoStatus, e
 	a.analyzeBranch(repo, status)
 	branchSpan.End()
 
-	_, wtSpan := tracing.Tracer().Start(ctx, "worktree_status")
-	a.analyzeWorktree(repo, status)
+	wtCtx, wtSpan := tracing.Tracer().Start(ctx, "worktree_status")
+	a.analyzeWorktree(wtCtx, repo, status)
 	wtSpan.End()
 
 	_, lcSpan := tracing.Tracer().Start(ctx, "last_commit")
@@ -84,13 +84,17 @@ func (a *Analyzer) analyzeBranch(repo *git.Repository, status *RepoStatus) {
 	status.Branch = head.Name().Short()
 }
 
-func (a *Analyzer) analyzeWorktree(repo *git.Repository, status *RepoStatus) {
+func (a *Analyzer) analyzeWorktree(ctx context.Context, repo *git.Repository, status *RepoStatus) {
+	_, openSpan := tracing.Tracer().Start(ctx, "wt_open")
 	wt, err := repo.Worktree()
+	openSpan.End()
 	if err != nil {
 		return
 	}
 
+	_, statusSpan := tracing.Tracer().Start(ctx, "wt_diff")
 	ws, err := wt.Status()
+	statusSpan.End()
 	if err != nil {
 		return
 	}
