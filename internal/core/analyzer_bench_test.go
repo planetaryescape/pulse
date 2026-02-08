@@ -60,12 +60,11 @@ func BenchmarkAnalyze(b *testing.B) {
 	})
 
 	b.Run("WorktreeStatus", func(b *testing.B) {
-		repo, _ := git.PlainOpen(repoPath)
 		a := NewAnalyzer(false, ghostThreshold)
 		status := &RepoStatus{}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			a.analyzeWorktree(repo, status)
+			a.analyzeWorktree(repoPath, status)
 		}
 	})
 

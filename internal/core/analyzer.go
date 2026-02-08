@@ -1,7 +1,9 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"time"
@@ -48,8 +50,8 @@ func (a *Analyzer) Analyze(ctx context.Context, repoPath string) (*RepoStatus, e
 	a.analyzeBranch(repo, status)
 	branchSpan.End()
 
-	wtCtx, wtSpan := tracing.Tracer().Start(ctx, "worktree_status")
-	a.analyzeWorktree(wtCtx, repo, status)
+	_, wtSpan := tracing.Tracer().Start(ctx, "worktree_status")
+	a.analyzeWorktree(repoPath, status)
 	wtSpan.End()
 
 	_, lcSpan := tracing.Tracer().Start(ctx, "last_commit")
@@ -84,23 +86,19 @@ func (a *Analyzer) analyzeBranch(repo *git.Repository, status *RepoStatus) {
 	status.Branch = head.Name().Short()
 }
 
-func (a *Analyzer) analyzeWorktree(ctx context.Context, repo *git.Repository, status *RepoStatus) {
-	_, openSpan := tracing.Tracer().Start(ctx, "wt_open")
-	wt, err := repo.Worktree()
-	openSpan.End()
+func (a *Analyzer) analyzeWorktree(repoPath string, status *RepoStatus) {
+	out, err := exec.Command("git", "-C", repoPath, "status", "--porcelain").Output()
 	if err != nil {
 		return
 	}
 
-	_, statusSpan := tracing.Tracer().Start(ctx, "wt_diff")
-	ws, err := wt.Status()
-	statusSpan.End()
-	if err != nil {
-		return
+	lines := bytes.Count(bytes.TrimRight(out, "\n"), []byte("\n"))
+	if len(out) > 0 {
+		lines++
 	}
 
-	status.IsClean = ws.IsClean()
-	status.ChangedFiles = len(ws)
+	status.IsClean = len(out) == 0
+	status.ChangedFiles = lines
 }
 
 func (a *Analyzer) analyzeLastCommit(repo *git.Repository, status *RepoStatus) {
