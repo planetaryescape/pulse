@@ -1,3 +1,6 @@
+default_path := "~/source"
+default_depth := "3"
+
 default:
     @just --list
 
@@ -7,14 +10,26 @@ build:
 run *ARGS:
     go run ./cmd/pulse {{ARGS}}
 
+scan path=default_path depth=default_depth:
+    go run ./cmd/pulse --path {{path}} --depth {{depth}}
+
+detail path=default_path depth=default_depth:
+    go run ./cmd/pulse --path {{path}} --depth {{depth}} --detail
+
+json path=default_path depth=default_depth:
+    go run ./cmd/pulse --path {{path}} --depth {{depth}} --format json
+
+time path=default_path depth=default_depth:
+    go run ./cmd/pulse --path {{path}} --depth {{depth}} --time
+
+full path=default_path depth=default_depth:
+    go run ./cmd/pulse --path {{path}} --depth {{depth}} --detail --time
+
 test:
     go test ./...
 
 bench:
     go test -bench=. -benchmem ./...
-
-time:
-    go run ./cmd/pulse --path /Users/guidefari/source/oss --depth 2 --time
 
 vet:
     go vet ./...
