@@ -4,8 +4,7 @@ A CLI tool that recursively scans directories for Git repos and displays a statu
 
 ## Motivation
 
-- Out of sight, out of mind
-- Came back to my laptop after a day or two away, needed a way to quickly jog my memory on what I've been working on
+My brain runs an "Out of sight, out of mind" operation. I came back to my laptop after a day or two away, and needed a way to quickly jog my memory on what I've been working on.
 
 ## Features
 
@@ -52,7 +51,7 @@ just scan ~/projects 2 # override path and depth
 ## Flags
 
 | Flag       | Default | Description                         |
-|------------|---------|-------------------------------------|
+| ---------- | ------- | ----------------------------------- |
 | `--path`   | `.`     | Root directory to scan              |
 | `--depth`  | `3`     | Maximum directory depth             |
 | `--detail` | `false` | Show recent commits + lines changed |
