@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,7 +33,7 @@ func (s *Scanner) Scan(ctx context.Context) (*ScanResult, error) {
 	start := time.Now()
 
 	ctx, findSpan := tracing.Tracer().Start(ctx, "find_repos")
-	repoPaths, err := s.findRepos()
+	found, err := s.findRepos()
 	findSpan.End()
 	if err != nil {
 		return nil, err
@@ -41,12 +43,13 @@ func (s *Scanner) Scan(ctx context.Context) (*ScanResult, error) {
 	pool := NewPool(s.config.WorkerCount)
 
 	_, processSpan := tracing.Tracer().Start(ctx, "process")
-	statuses, scanErrors := pool.Process(ctx, repoPaths, analyzer)
+	statuses, scanErrors := pool.Process(ctx, found.repos, analyzer)
 	processSpan.End()
 
 	result := &ScanResult{
 		Repos:        statuses,
 		TotalRepos:   len(statuses),
+		NonGitPaths:  found.nonGitPaths,
 		ScanDuration: time.Since(start),
 		Errors:       scanErrors,
 	}
@@ -58,7 +61,12 @@ func (s *Scanner) Scan(ctx context.Context) (*ScanResult, error) {
 	return result, nil
 }
 
-func (s *Scanner) findRepos() ([]string, error) {
+type findResult struct {
+	repos       []string
+	nonGitPaths []string
+}
+
+func (s *Scanner) findRepos() (*findResult, error) {
 	rootDepth := strings.Count(filepath.Clean(s.config.RootPath), string(filepath.Separator))
 	var repos []string
 	skipDirs := map[string]bool{
@@ -96,7 +104,56 @@ func (s *Scanner) findRepos() ([]string, error) {
 		},
 	})
 
-	return repos, err
+	nonGitPaths := findNonGitSiblings(s.config.RootPath, repos, skipDirs)
+
+	return &findResult{repos: repos, nonGitPaths: nonGitPaths}, err
+}
+
+func findNonGitSiblings(rootPath string, repos []string, skipDirs map[string]bool) []string {
+	repoSet := make(map[string]bool, len(repos))
+	parentDirs := make(map[string]bool)
+	for _, r := range repos {
+		repoSet[r] = true
+		parentDirs[filepath.Dir(r)] = true
+	}
+
+	var nonGit []string
+	for parent := range parentDirs {
+		entries, err := os.ReadDir(parent)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if name == ".git" || skipDirs[name] {
+				continue
+			}
+			childPath := filepath.Join(parent, name)
+			if repoSet[childPath] {
+				continue
+			}
+			containsRepo := false
+			for _, r := range repos {
+				if strings.HasPrefix(r, childPath+string(filepath.Separator)) {
+					containsRepo = true
+					break
+				}
+			}
+			if !containsRepo {
+				rel, err := filepath.Rel(rootPath, childPath)
+				if err != nil {
+					rel = filepath.Base(childPath)
+				}
+				nonGit = append(nonGit, rel)
+			}
+		}
+	}
+
+	sort.Strings(nonGit)
+	return nonGit
 }
 
 func (s *Scanner) tallyDailyCommits(statuses []RepoStatus) map[string]int {

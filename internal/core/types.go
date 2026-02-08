@@ -40,6 +40,7 @@ type LinesChanged struct {
 type ScanResult struct {
 	Repos        []RepoStatus   `json:"repos"`
 	TotalRepos   int            `json:"total_repos"`
+	NonGitPaths  []string       `json:"non_git_paths,omitempty"`
 	DailyCommits map[string]int `json:"daily_commits,omitempty"`
 	ScanDuration time.Duration  `json:"scan_duration"`
 	Errors       []ScanError    `json:"errors,omitempty"`

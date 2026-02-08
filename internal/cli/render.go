@@ -85,6 +85,13 @@ func RenderTable(result *core.ScanResult) {
 		}
 	}
 
+	if len(result.NonGitPaths) > 0 {
+		fmt.Printf("\n%s  %d non-git directories: %s\n",
+			dim("📁"),
+			len(result.NonGitPaths),
+			dim(strings.Join(result.NonGitPaths, ", ")))
+	}
+
 	if result.DailyCommits != nil {
 		today := time.Now().Format("2006-01-02")
 		if count, ok := result.DailyCommits[today]; ok {
