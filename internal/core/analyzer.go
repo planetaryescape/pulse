@@ -247,6 +247,6 @@ func firstLine(s string) string {
 
 func SortByLastActive(repos []RepoStatus) {
 	sort.Slice(repos, func(i, j int) bool {
-		return repos[i].LastCommitTime.After(repos[j].LastCommitTime)
+		return repos[i].LastCommitTime.Before(repos[j].LastCommitTime)
 	})
 }
