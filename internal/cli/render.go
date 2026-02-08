@@ -35,7 +35,7 @@ func Render(result *core.ScanResult, format string) {
 
 func RenderTable(result *core.ScanResult) {
 	table := tablewriter.NewTable(os.Stdout,
-		tablewriter.WithHeader([]string{"Repo", "Status", "Branch", "Last Active", "Ahead/Behind"}),
+		tablewriter.WithHeader([]string{"Repo", "Status", "Last Active", "Branch", "Ahead/Behind"}),
 		tablewriter.WithHeaderAlignment(tw.AlignLeft),
 		tablewriter.WithAlignment(tw.Alignment{tw.AlignLeft}),
 		tablewriter.WithBorders(tw.Border{Left: tw.Off, Right: tw.Off, Top: tw.Off, Bottom: tw.Off}),
@@ -66,8 +66,8 @@ func RenderTable(result *core.ScanResult) {
 		table.Append([]string{
 			repo.Name,
 			status,
-			branch,
 			timeAgo(repo.LastCommitTime),
+			branch,
 			aheadBehind,
 		})
 	}
@@ -103,7 +103,8 @@ func RenderTable(result *core.ScanResult) {
 }
 
 func RenderDetail(result *core.ScanResult) {
-	for _, repo := range result.Repos {
+	for i := len(result.Repos) - 1; i >= 0; i-- {
+		repo := result.Repos[i]
 		if len(repo.RecentCommits) == 0 {
 			continue
 		}
