@@ -32,4 +32,8 @@ func main() {
 	if cliConfig.DetailMode {
 		cli.RenderDetail(result)
 	}
+
+	if cliConfig.ShowTimings {
+		cli.RenderTimings(result)
+	}
 }

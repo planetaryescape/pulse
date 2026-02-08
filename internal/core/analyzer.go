@@ -22,10 +22,16 @@ func NewAnalyzer(detailMode bool, ghostThreshold time.Duration) *Analyzer {
 	}
 }
 
-func (a *Analyzer) Analyze(repoPath string) (*RepoStatus, error) {
+func (a *Analyzer) Analyze(repoPath string) (*RepoStatus, *RepoTimings, error) {
+	var timings RepoTimings
+	timings.RepoName = filepath.Base(repoPath)
+	totalStart := time.Now()
+
+	start := time.Now()
 	repo, err := git.PlainOpen(repoPath)
+	timings.PlainOpen = time.Since(start)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	status := &RepoStatus{
@@ -33,19 +39,36 @@ func (a *Analyzer) Analyze(repoPath string) (*RepoStatus, error) {
 		Path: repoPath,
 	}
 
+	start = time.Now()
 	a.analyzeBranch(repo, status)
+	timings.Branch = time.Since(start)
+
+	start = time.Now()
 	a.analyzeWorktree(repo, status)
+	timings.WorktreeStatus = time.Since(start)
+
+	start = time.Now()
 	a.analyzeLastCommit(repo, status)
+	timings.LastCommit = time.Since(start)
+
+	start = time.Now()
 	a.analyzeRemoteStatus(repo, status)
+	timings.RemoteStatus = time.Since(start)
 
 	if a.detailMode {
+		start = time.Now()
 		a.analyzeRecentCommits(repo, status)
+		timings.RecentCommits = time.Since(start)
+
+		start = time.Now()
 		a.analyzeLinesChanged(repo, status)
+		timings.LinesChanged = time.Since(start)
 	}
 
 	status.IsGhost = time.Since(status.LastCommitTime) > a.ghostThreshold
+	timings.Total = time.Since(totalStart)
 
-	return status, nil
+	return status, &timings, nil
 }
 
 func (a *Analyzer) analyzeBranch(repo *git.Repository, status *RepoStatus) {

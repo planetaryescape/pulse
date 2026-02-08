@@ -119,6 +119,59 @@ func RenderJSON(result *core.ScanResult) {
 	enc.Encode(result)
 }
 
+func RenderTimings(result *core.ScanResult) {
+	t := result.Timings
+	if t == nil {
+		return
+	}
+
+	fmt.Printf("\n%s  Performance Breakdown\n", cyan("⏱"))
+	fmt.Printf("  %-20s %s\n", "Directory scan:", t.FindRepos.Round(time.Millisecond))
+	fmt.Printf("  %-20s %s\n", "Analysis (total):", t.Analysis.Round(time.Millisecond))
+
+	if len(t.RepoTimings) > 0 {
+		var min, max, sum time.Duration
+		min = t.RepoTimings[0].Total
+		for _, rt := range t.RepoTimings {
+			sum += rt.Total
+			if rt.Total < min {
+				min = rt.Total
+			}
+			if rt.Total > max {
+				max = rt.Total
+			}
+		}
+		avg := sum / time.Duration(len(t.RepoTimings))
+
+		fmt.Printf("  %-20s min=%s avg=%s max=%s\n", "Per-repo:",
+			min.Round(time.Millisecond),
+			avg.Round(time.Millisecond),
+			max.Round(time.Millisecond))
+
+		var slowest core.RepoTimings
+		for _, rt := range t.RepoTimings {
+			if rt.Total > slowest.Total {
+				slowest = rt
+			}
+		}
+
+		fmt.Printf("\n  %s  Slowest repo: %s (%s)\n", dim("▸"), slowest.RepoName, slowest.Total.Round(time.Millisecond))
+		fmt.Printf("    %-18s %s\n", "PlainOpen:", slowest.PlainOpen.Round(time.Millisecond))
+		fmt.Printf("    %-18s %s\n", "Branch:", slowest.Branch.Round(time.Millisecond))
+		fmt.Printf("    %-18s %s\n", "WorktreeStatus:", slowest.WorktreeStatus.Round(time.Millisecond))
+		fmt.Printf("    %-18s %s\n", "LastCommit:", slowest.LastCommit.Round(time.Millisecond))
+		fmt.Printf("    %-18s %s\n", "RemoteStatus:", slowest.RemoteStatus.Round(time.Millisecond))
+		if slowest.RecentCommits > 0 {
+			fmt.Printf("    %-18s %s\n", "RecentCommits:", slowest.RecentCommits.Round(time.Millisecond))
+		}
+		if slowest.LinesChanged > 0 {
+			fmt.Printf("    %-18s %s\n", "LinesChanged:", slowest.LinesChanged.Round(time.Millisecond))
+		}
+	}
+
+	fmt.Printf("\n  %-20s %s\n", "Total:", result.ScanDuration.Round(time.Millisecond))
+}
+
 func timeAgo(t time.Time) string {
 	if t.IsZero() {
 		return "never"

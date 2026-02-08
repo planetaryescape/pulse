@@ -28,21 +28,30 @@ func NewScanner(config ScanConfig) *Scanner {
 func (s *Scanner) Scan() (*ScanResult, error) {
 	start := time.Now()
 
+	findStart := time.Now()
 	repoPaths, err := s.findRepos()
 	if err != nil {
 		return nil, err
 	}
+	findDuration := time.Since(findStart)
 
 	analyzer := NewAnalyzer(s.config.DetailMode, s.config.GhostThreshold)
 	pool := NewPool(s.config.WorkerCount)
 
-	statuses, scanErrors := pool.Process(repoPaths, analyzer)
+	analysisStart := time.Now()
+	statuses, repoTimings, scanErrors := pool.Process(repoPaths, analyzer)
+	analysisDuration := time.Since(analysisStart)
 
 	result := &ScanResult{
 		Repos:        statuses,
 		TotalRepos:   len(statuses),
 		ScanDuration: time.Since(start),
 		Errors:       scanErrors,
+		Timings: &Timings{
+			FindRepos:   findDuration,
+			Analysis:    analysisDuration,
+			RepoTimings: repoTimings,
+		},
 	}
 
 	if s.config.DetailMode {
