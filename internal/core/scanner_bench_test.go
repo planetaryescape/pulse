@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -42,7 +43,7 @@ func BenchmarkFullScan(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		s.Scan()
+		s.Scan(context.Background())
 	}
 }
 
@@ -58,6 +59,6 @@ func BenchmarkFullScanDetail(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		s.Scan()
+		s.Scan(context.Background())
 	}
 }

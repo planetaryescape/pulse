@@ -1,6 +1,9 @@
 package core
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 type Pool struct {
 	workerCount int
@@ -10,11 +13,10 @@ func NewPool(workerCount int) *Pool {
 	return &Pool{workerCount: workerCount}
 }
 
-func (p *Pool) Process(repoPaths []string, analyzer *Analyzer) ([]RepoStatus, []RepoTimings, []ScanError) {
+func (p *Pool) Process(ctx context.Context, repoPaths []string, analyzer *Analyzer) ([]RepoStatus, []ScanError) {
 	type result struct {
-		status  *RepoStatus
-		timings *RepoTimings
-		err     *ScanError
+		status *RepoStatus
+		err    *ScanError
 	}
 
 	jobs := make(chan string, len(repoPaths))
@@ -26,11 +28,11 @@ func (p *Pool) Process(repoPaths []string, analyzer *Analyzer) ([]RepoStatus, []
 		go func() {
 			defer wg.Done()
 			for path := range jobs {
-				status, timings, err := analyzer.Analyze(path)
+				status, err := analyzer.Analyze(ctx, path)
 				if err != nil {
 					results <- result{err: &ScanError{Path: path, Message: err.Error()}}
 				} else {
-					results <- result{status: status, timings: timings}
+					results <- result{status: status}
 				}
 			}
 		}()
@@ -47,14 +49,10 @@ func (p *Pool) Process(repoPaths []string, analyzer *Analyzer) ([]RepoStatus, []
 	}()
 
 	var statuses []RepoStatus
-	var repoTimings []RepoTimings
 	var errors []ScanError
 	for r := range results {
 		if r.status != nil {
 			statuses = append(statuses, *r.status)
-		}
-		if r.timings != nil {
-			repoTimings = append(repoTimings, *r.timings)
 		}
 		if r.err != nil {
 			errors = append(errors, *r.err)
@@ -62,5 +60,5 @@ func (p *Pool) Process(repoPaths []string, analyzer *Analyzer) ([]RepoStatus, []
 	}
 
 	SortByLastActive(statuses)
-	return statuses, repoTimings, errors
+	return statuses, errors
 }

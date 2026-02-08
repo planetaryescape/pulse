@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/guidefari/pulse/internal/tracing"
 	"github.com/karrick/godirwalk"
 )
 
@@ -25,33 +27,28 @@ func NewScanner(config ScanConfig) *Scanner {
 	return &Scanner{config: config}
 }
 
-func (s *Scanner) Scan() (*ScanResult, error) {
+func (s *Scanner) Scan(ctx context.Context) (*ScanResult, error) {
 	start := time.Now()
 
-	findStart := time.Now()
+	ctx, findSpan := tracing.Tracer().Start(ctx, "find_repos")
 	repoPaths, err := s.findRepos()
+	findSpan.End()
 	if err != nil {
 		return nil, err
 	}
-	findDuration := time.Since(findStart)
 
 	analyzer := NewAnalyzer(s.config.DetailMode, s.config.GhostThreshold)
 	pool := NewPool(s.config.WorkerCount)
 
-	analysisStart := time.Now()
-	statuses, repoTimings, scanErrors := pool.Process(repoPaths, analyzer)
-	analysisDuration := time.Since(analysisStart)
+	_, processSpan := tracing.Tracer().Start(ctx, "process")
+	statuses, scanErrors := pool.Process(ctx, repoPaths, analyzer)
+	processSpan.End()
 
 	result := &ScanResult{
 		Repos:        statuses,
 		TotalRepos:   len(statuses),
 		ScanDuration: time.Since(start),
 		Errors:       scanErrors,
-		Timings: &Timings{
-			FindRepos:   findDuration,
-			Analysis:    analysisDuration,
-			RepoTimings: repoTimings,
-		},
 	}
 
 	if s.config.DetailMode {

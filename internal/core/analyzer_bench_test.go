@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func BenchmarkAnalyze(b *testing.B) {
 		a := NewAnalyzer(false, ghostThreshold)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			a.Analyze(repoPath)
+			a.Analyze(context.Background(), repoPath)
 		}
 	})
 
@@ -37,7 +38,7 @@ func BenchmarkAnalyze(b *testing.B) {
 		a := NewAnalyzer(true, ghostThreshold)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			a.Analyze(repoPath)
+			a.Analyze(context.Background(), repoPath)
 		}
 	})
 

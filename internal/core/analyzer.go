@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"path/filepath"
 	"sort"
 	"time"
@@ -8,6 +9,9 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/guidefari/pulse/internal/tracing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Analyzer struct {
@@ -22,16 +26,17 @@ func NewAnalyzer(detailMode bool, ghostThreshold time.Duration) *Analyzer {
 	}
 }
 
-func (a *Analyzer) Analyze(repoPath string) (*RepoStatus, *RepoTimings, error) {
-	var timings RepoTimings
-	timings.RepoName = filepath.Base(repoPath)
-	totalStart := time.Now()
+func (a *Analyzer) Analyze(ctx context.Context, repoPath string) (*RepoStatus, error) {
+	ctx, span := tracing.Tracer().Start(ctx, "analyze",
+		trace.WithAttributes(attribute.String("repo", filepath.Base(repoPath))),
+	)
+	defer span.End()
 
-	start := time.Now()
+	_, plainSpan := tracing.Tracer().Start(ctx, "plain_open")
 	repo, err := git.PlainOpen(repoPath)
-	timings.PlainOpen = time.Since(start)
+	plainSpan.End()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	status := &RepoStatus{
@@ -39,36 +44,35 @@ func (a *Analyzer) Analyze(repoPath string) (*RepoStatus, *RepoTimings, error) {
 		Path: repoPath,
 	}
 
-	start = time.Now()
+	_, branchSpan := tracing.Tracer().Start(ctx, "branch")
 	a.analyzeBranch(repo, status)
-	timings.Branch = time.Since(start)
+	branchSpan.End()
 
-	start = time.Now()
+	_, wtSpan := tracing.Tracer().Start(ctx, "worktree_status")
 	a.analyzeWorktree(repo, status)
-	timings.WorktreeStatus = time.Since(start)
+	wtSpan.End()
 
-	start = time.Now()
+	_, lcSpan := tracing.Tracer().Start(ctx, "last_commit")
 	a.analyzeLastCommit(repo, status)
-	timings.LastCommit = time.Since(start)
+	lcSpan.End()
 
-	start = time.Now()
+	_, rsSpan := tracing.Tracer().Start(ctx, "remote_status")
 	a.analyzeRemoteStatus(repo, status)
-	timings.RemoteStatus = time.Since(start)
+	rsSpan.End()
 
 	if a.detailMode {
-		start = time.Now()
+		_, rcSpan := tracing.Tracer().Start(ctx, "recent_commits")
 		a.analyzeRecentCommits(repo, status)
-		timings.RecentCommits = time.Since(start)
+		rcSpan.End()
 
-		start = time.Now()
+		_, lcSpan := tracing.Tracer().Start(ctx, "lines_changed")
 		a.analyzeLinesChanged(repo, status)
-		timings.LinesChanged = time.Since(start)
+		lcSpan.End()
 	}
 
 	status.IsGhost = time.Since(status.LastCommitTime) > a.ghostThreshold
-	timings.Total = time.Since(totalStart)
 
-	return status, &timings, nil
+	return status, nil
 }
 
 func (a *Analyzer) analyzeBranch(repo *git.Repository, status *RepoStatus) {

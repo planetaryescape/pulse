@@ -8,8 +8,10 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/guidefari/pulse/internal/core"
+	"github.com/guidefari/pulse/internal/tracing"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/tw"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var (
@@ -119,57 +121,111 @@ func RenderJSON(result *core.ScanResult) {
 	enc.Encode(result)
 }
 
-func RenderTimings(result *core.ScanResult) {
-	t := result.Timings
-	if t == nil {
+func RenderTimings(exp *tracing.CollectingExporter) {
+	if exp == nil {
 		return
 	}
 
-	fmt.Printf("\n%s  Performance Breakdown\n", cyan("⏱"))
-	fmt.Printf("  %-20s %s\n", "Directory scan:", t.FindRepos.Round(time.Millisecond))
-	fmt.Printf("  %-20s %s\n", "Analysis (total):", t.Analysis.Round(time.Millisecond))
+	spans := exp.Spans()
 
-	if len(t.RepoTimings) > 0 {
-		var min, max, sum time.Duration
-		min = t.RepoTimings[0].Total
-		for _, rt := range t.RepoTimings {
-			sum += rt.Total
-			if rt.Total < min {
-				min = rt.Total
+	type analyzeSpan struct {
+		repo     string
+		duration time.Duration
+	}
+
+	var findReposDur, processDur time.Duration
+	var analyzeSpans []analyzeSpan
+	childSpans := make(map[string]map[string]time.Duration)
+
+	for _, s := range spans {
+		dur := s.EndTime().Sub(s.StartTime())
+		name := s.Name()
+
+		switch name {
+		case "find_repos":
+			findReposDur = dur
+		case "process":
+			processDur = dur
+		case "analyze":
+			repo := ""
+			for _, attr := range s.Attributes() {
+				if attr.Key == attribute.Key("repo") {
+					repo = attr.Value.AsString()
+				}
 			}
-			if rt.Total > max {
-				max = rt.Total
+			analyzeSpans = append(analyzeSpans, analyzeSpan{repo: repo, duration: dur})
+		default:
+			parent := s.Parent()
+			if !parent.IsValid() {
+				continue
 			}
-		}
-		avg := sum / time.Duration(len(t.RepoTimings))
-
-		fmt.Printf("  %-20s min=%s avg=%s max=%s\n", "Per-repo:",
-			min.Round(time.Millisecond),
-			avg.Round(time.Millisecond),
-			max.Round(time.Millisecond))
-
-		var slowest core.RepoTimings
-		for _, rt := range t.RepoTimings {
-			if rt.Total > slowest.Total {
-				slowest = rt
+			pid := parent.SpanID().String()
+			if childSpans[pid] == nil {
+				childSpans[pid] = make(map[string]time.Duration)
 			}
-		}
-
-		fmt.Printf("\n  %s  Slowest repo: %s (%s)\n", dim("▸"), slowest.RepoName, slowest.Total.Round(time.Millisecond))
-		fmt.Printf("    %-18s %s\n", "PlainOpen:", slowest.PlainOpen.Round(time.Millisecond))
-		fmt.Printf("    %-18s %s\n", "Branch:", slowest.Branch.Round(time.Millisecond))
-		fmt.Printf("    %-18s %s\n", "WorktreeStatus:", slowest.WorktreeStatus.Round(time.Millisecond))
-		fmt.Printf("    %-18s %s\n", "LastCommit:", slowest.LastCommit.Round(time.Millisecond))
-		fmt.Printf("    %-18s %s\n", "RemoteStatus:", slowest.RemoteStatus.Round(time.Millisecond))
-		if slowest.RecentCommits > 0 {
-			fmt.Printf("    %-18s %s\n", "RecentCommits:", slowest.RecentCommits.Round(time.Millisecond))
-		}
-		if slowest.LinesChanged > 0 {
-			fmt.Printf("    %-18s %s\n", "LinesChanged:", slowest.LinesChanged.Round(time.Millisecond))
+			childSpans[pid][name] = dur
 		}
 	}
 
-	fmt.Printf("\n  %-20s %s\n", "Total:", result.ScanDuration.Round(time.Millisecond))
+	fmt.Printf("\n%s  Performance Breakdown\n", cyan("⏱"))
+	fmt.Printf("  %-20s %s\n", "Directory scan:", findReposDur.Round(time.Millisecond))
+	fmt.Printf("  %-20s %s\n", "Analysis (total):", processDur.Round(time.Millisecond))
+
+	if len(analyzeSpans) > 0 {
+		minDur := analyzeSpans[0].duration
+		var maxDur, sum time.Duration
+		var slowestIdx int
+		for i, as := range analyzeSpans {
+			sum += as.duration
+			if as.duration < minDur {
+				minDur = as.duration
+			}
+			if as.duration > maxDur {
+				maxDur = as.duration
+				slowestIdx = i
+			}
+		}
+		avg := sum / time.Duration(len(analyzeSpans))
+
+		fmt.Printf("  %-20s min=%s avg=%s max=%s\n", "Per-repo:",
+			minDur.Round(time.Millisecond),
+			avg.Round(time.Millisecond),
+			maxDur.Round(time.Millisecond))
+
+		slowest := analyzeSpans[slowestIdx]
+
+		var slowestSpanID string
+		for _, s := range spans {
+			if s.Name() != "analyze" {
+				continue
+			}
+			dur := s.EndTime().Sub(s.StartTime())
+			if dur == slowest.duration {
+				slowestSpanID = s.SpanContext().SpanID().String()
+				break
+			}
+		}
+
+		fmt.Printf("\n  %s  Slowest repo: %s (%s)\n", dim("▸"), slowest.repo, slowest.duration.Round(time.Millisecond))
+
+		breakdown := childSpans[slowestSpanID]
+		labels := []struct{ name, label string }{
+			{"plain_open", "PlainOpen:"},
+			{"branch", "Branch:"},
+			{"worktree_status", "WorktreeStatus:"},
+			{"last_commit", "LastCommit:"},
+			{"remote_status", "RemoteStatus:"},
+			{"recent_commits", "RecentCommits:"},
+			{"lines_changed", "LinesChanged:"},
+		}
+		for _, l := range labels {
+			if d, ok := breakdown[l.name]; ok {
+				fmt.Printf("    %-18s %s\n", l.label, d.Round(time.Millisecond))
+			}
+		}
+	}
+
+	fmt.Println()
 }
 
 func timeAgo(t time.Time) string {
