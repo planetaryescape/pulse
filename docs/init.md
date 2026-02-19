@@ -98,7 +98,7 @@ just run --path ~/source --depth 5 # raw flag passthrough
 All features shipped and working:
 - Basic table output with branch, clean/dirty status, last active time
 - Unpushed/unpulled detection (↑/↓ indicators)
-- Ghost repo detection (👻 for repos inactive >6 months)
+- Ghost repo detection (👻 for repos inactive >1 month)
 - Detail mode (`--detail`) — last 5 commits + lines changed in last 7 days
 - Daily commit tally across all repos
 - JSON output (`--format json`)

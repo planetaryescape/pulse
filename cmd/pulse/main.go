@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/guidefari/pulse/internal/cli"
 	"github.com/guidefari/pulse/internal/core"
@@ -23,7 +22,7 @@ func main() {
 		MaxDepth:       cliConfig.MaxDepth,
 		DetailMode:     cliConfig.DetailMode,
 		Fetch:          cliConfig.Fetch,
-		GhostThreshold: 6 * 30 * 24 * time.Hour,
+		GhostThreshold: core.DefaultGhostThreshold,
 		WorkerCount:    4,
 	}
 
