@@ -35,7 +35,7 @@ func Render(result *core.ScanResult, format string) {
 
 func RenderTable(result *core.ScanResult) {
 	table := tablewriter.NewTable(os.Stdout,
-		tablewriter.WithHeader([]string{"Repo", "Status", "Last Active", "Branch", "Ahead/Behind"}),
+		tablewriter.WithHeader([]string{"Repo", "Status", "Last Active", "Branch", "Ahead/Behind", "Activity"}),
 		tablewriter.WithHeaderAlignment(tw.AlignLeft),
 		tablewriter.WithAlignment(tw.Alignment{tw.AlignLeft}),
 		tablewriter.WithBorders(tw.Border{Left: tw.Off, Right: tw.Off, Top: tw.Off, Bottom: tw.Off}),
@@ -69,6 +69,7 @@ func RenderTable(result *core.ScanResult) {
 			timeAgo(repo.LastCommitTime),
 			branch,
 			aheadBehind,
+			sparkline(repo.DailyActivity),
 		})
 	}
 
@@ -360,6 +361,32 @@ func renderChildren(p parsedSpans, parentID trace.SpanID, rootStart time.Time, t
 			renderChildren(p, c.spanID, rootStart, totalDur, childIndent)
 		}
 	}
+}
+
+var sparkBlocks = []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
+
+func sparkline(values []int) string {
+	if len(values) == 0 {
+		return dim("▁▁▁▁▁▁▁")
+	}
+
+	max := 0
+	for _, v := range values {
+		if v > max {
+			max = v
+		}
+	}
+
+	if max == 0 {
+		return dim("▁▁▁▁▁▁▁")
+	}
+
+	var b strings.Builder
+	for _, v := range values {
+		idx := (v * (len(sparkBlocks) - 1)) / max
+		b.WriteRune(sparkBlocks[idx])
+	}
+	return b.String()
 }
 
 func timeAgo(t time.Time) string {

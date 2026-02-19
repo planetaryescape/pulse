@@ -22,6 +22,7 @@ func main() {
 		RootPath:       cliConfig.RootPath,
 		MaxDepth:       cliConfig.MaxDepth,
 		DetailMode:     cliConfig.DetailMode,
+		Fetch:          cliConfig.Fetch,
 		GhostThreshold: 6 * 30 * 24 * time.Hour,
 		WorkerCount:    4,
 	}

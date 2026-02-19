@@ -18,12 +18,14 @@ import (
 
 type Analyzer struct {
 	detailMode     bool
+	fetch          bool
 	ghostThreshold time.Duration
 }
 
-func NewAnalyzer(detailMode bool, ghostThreshold time.Duration) *Analyzer {
+func NewAnalyzer(detailMode bool, fetch bool, ghostThreshold time.Duration) *Analyzer {
 	return &Analyzer{
 		detailMode:     detailMode,
+		fetch:          fetch,
 		ghostThreshold: ghostThreshold,
 	}
 }
@@ -58,6 +60,12 @@ func (a *Analyzer) Analyze(ctx context.Context, repoPath string) (*RepoStatus, e
 	a.analyzeLastCommit(repo, status)
 	lcSpan.End()
 
+	if a.fetch {
+		_, fetchSpan := tracing.Tracer().Start(ctx, "fetch")
+		a.fetchRemote(repoPath)
+		fetchSpan.End()
+	}
+
 	_, rsSpan := tracing.Tracer().Start(ctx, "remote_status")
 	a.analyzeRemoteStatus(repo, status)
 	rsSpan.End()
@@ -72,6 +80,10 @@ func (a *Analyzer) Analyze(ctx context.Context, repoPath string) (*RepoStatus, e
 		lcSpan.End()
 	}
 
+	_, actSpan := tracing.Tracer().Start(ctx, "daily_activity")
+	a.analyzeDailyActivity(repo, status)
+	actSpan.End()
+
 	status.IsGhost = time.Since(status.LastCommitTime) > a.ghostThreshold
 
 	return status, nil
@@ -84,6 +96,10 @@ func (a *Analyzer) analyzeBranch(repo *git.Repository, status *RepoStatus) {
 		return
 	}
 	status.Branch = head.Name().Short()
+}
+
+func (a *Analyzer) fetchRemote(repoPath string) {
+	exec.Command("git", "-C", repoPath, "fetch", "--quiet").Run()
 }
 
 func (a *Analyzer) analyzeWorktree(repoPath string, status *RepoStatus) {
@@ -234,6 +250,32 @@ func (a *Analyzer) analyzeLinesChanged(repo *git.Repository, status *RepoStatus)
 			Period:  7 * 24 * time.Hour,
 		}
 	}
+}
+
+func (a *Analyzer) analyzeDailyActivity(repo *git.Repository, status *RepoStatus) {
+	now := time.Now()
+	since := now.AddDate(0, 0, -6)
+	since = time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, since.Location())
+
+	iter, err := repo.Log(&git.LogOptions{Since: &since})
+	if err != nil {
+		return
+	}
+	defer iter.Close()
+
+	days := make([]int, 7)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	iter.ForEach(func(c *object.Commit) error {
+		d := today.Sub(time.Date(c.Author.When.Year(), c.Author.When.Month(), c.Author.When.Day(), 0, 0, 0, 0, c.Author.When.Location()))
+		idx := int(d.Hours() / 24)
+		if idx >= 0 && idx < 7 {
+			days[6-idx]++
+		}
+		return nil
+	})
+
+	status.DailyActivity = days
 }
 
 func firstLine(s string) string {

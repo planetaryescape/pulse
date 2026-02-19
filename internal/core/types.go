@@ -6,6 +6,7 @@ type ScanConfig struct {
 	RootPath       string
 	MaxDepth       int
 	DetailMode     bool
+	Fetch          bool
 	GhostThreshold time.Duration
 	WorkerCount    int
 }
@@ -22,6 +23,7 @@ type RepoStatus struct {
 	IsGhost         bool          `json:"is_ghost"`
 	RecentCommits   []Commit      `json:"recent_commits,omitempty"`
 	LinesChanged    *LinesChanged `json:"lines_changed,omitempty"`
+	DailyActivity   []int         `json:"daily_activity,omitempty"`
 }
 
 type Commit struct {

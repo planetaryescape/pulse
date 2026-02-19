@@ -27,7 +27,7 @@ func BenchmarkAnalyze(b *testing.B) {
 	ghostThreshold := 6 * 30 * 24 * time.Hour
 
 	b.Run("Full", func(b *testing.B) {
-		a := NewAnalyzer(false, ghostThreshold)
+		a := NewAnalyzer(false, false, ghostThreshold)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			a.Analyze(context.Background(), repoPath)
@@ -35,7 +35,7 @@ func BenchmarkAnalyze(b *testing.B) {
 	})
 
 	b.Run("FullDetail", func(b *testing.B) {
-		a := NewAnalyzer(true, ghostThreshold)
+		a := NewAnalyzer(true, false, ghostThreshold)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			a.Analyze(context.Background(), repoPath)
@@ -51,7 +51,7 @@ func BenchmarkAnalyze(b *testing.B) {
 
 	b.Run("Branch", func(b *testing.B) {
 		repo, _ := git.PlainOpen(repoPath)
-		a := NewAnalyzer(false, ghostThreshold)
+		a := NewAnalyzer(false, false, ghostThreshold)
 		status := &RepoStatus{}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -60,7 +60,7 @@ func BenchmarkAnalyze(b *testing.B) {
 	})
 
 	b.Run("WorktreeStatus", func(b *testing.B) {
-		a := NewAnalyzer(false, ghostThreshold)
+		a := NewAnalyzer(false, false, ghostThreshold)
 		status := &RepoStatus{}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -70,7 +70,7 @@ func BenchmarkAnalyze(b *testing.B) {
 
 	b.Run("LastCommit", func(b *testing.B) {
 		repo, _ := git.PlainOpen(repoPath)
-		a := NewAnalyzer(false, ghostThreshold)
+		a := NewAnalyzer(false, false, ghostThreshold)
 		status := &RepoStatus{}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -80,7 +80,7 @@ func BenchmarkAnalyze(b *testing.B) {
 
 	b.Run("RemoteStatus", func(b *testing.B) {
 		repo, _ := git.PlainOpen(repoPath)
-		a := NewAnalyzer(false, ghostThreshold)
+		a := NewAnalyzer(false, false, ghostThreshold)
 		status := &RepoStatus{}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -90,7 +90,7 @@ func BenchmarkAnalyze(b *testing.B) {
 
 	b.Run("RecentCommits", func(b *testing.B) {
 		repo, _ := git.PlainOpen(repoPath)
-		a := NewAnalyzer(true, ghostThreshold)
+		a := NewAnalyzer(true, false, ghostThreshold)
 		status := &RepoStatus{}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -101,7 +101,7 @@ func BenchmarkAnalyze(b *testing.B) {
 
 	b.Run("LinesChanged", func(b *testing.B) {
 		repo, _ := git.PlainOpen(repoPath)
-		a := NewAnalyzer(true, ghostThreshold)
+		a := NewAnalyzer(true, false, ghostThreshold)
 		status := &RepoStatus{}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {

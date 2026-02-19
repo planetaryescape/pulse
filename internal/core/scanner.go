@@ -39,7 +39,7 @@ func (s *Scanner) Scan(ctx context.Context) (*ScanResult, error) {
 		return nil, err
 	}
 
-	analyzer := NewAnalyzer(s.config.DetailMode, s.config.GhostThreshold)
+	analyzer := NewAnalyzer(s.config.DetailMode, s.config.Fetch, s.config.GhostThreshold)
 	pool := NewPool(s.config.WorkerCount)
 
 	_, processSpan := tracing.Tracer().Start(ctx, "process")
