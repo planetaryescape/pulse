@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/go-git/go-git/v5"
 )
@@ -24,7 +23,7 @@ func benchRepo(b *testing.B) string {
 
 func BenchmarkAnalyze(b *testing.B) {
 	repoPath := benchRepo(b)
-	ghostThreshold := 6 * 30 * 24 * time.Hour
+	ghostThreshold := DefaultGhostThreshold
 
 	b.Run("Full", func(b *testing.B) {
 		a := NewAnalyzer(false, false, ghostThreshold)

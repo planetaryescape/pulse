@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"testing"
-	"time"
 )
 
 func benchPath(b *testing.B) string {
@@ -22,7 +21,7 @@ func BenchmarkFindRepos(b *testing.B) {
 	s := NewScanner(ScanConfig{
 		RootPath:       path,
 		MaxDepth:       3,
-		GhostThreshold: 6 * 30 * 24 * time.Hour,
+		GhostThreshold: DefaultGhostThreshold,
 		WorkerCount:    4,
 	})
 
@@ -37,7 +36,7 @@ func BenchmarkFullScan(b *testing.B) {
 	s := NewScanner(ScanConfig{
 		RootPath:       path,
 		MaxDepth:       2,
-		GhostThreshold: 6 * 30 * 24 * time.Hour,
+		GhostThreshold: DefaultGhostThreshold,
 		WorkerCount:    4,
 	})
 
@@ -53,7 +52,7 @@ func BenchmarkFullScanDetail(b *testing.B) {
 		RootPath:       path,
 		MaxDepth:       2,
 		DetailMode:     true,
-		GhostThreshold: 6 * 30 * 24 * time.Hour,
+		GhostThreshold: DefaultGhostThreshold,
 		WorkerCount:    4,
 	})
 

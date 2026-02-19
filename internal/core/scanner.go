@@ -24,7 +24,7 @@ func NewScanner(config ScanConfig) *Scanner {
 		config.MaxDepth = 3
 	}
 	if config.GhostThreshold <= 0 {
-		config.GhostThreshold = 6 * 30 * 24 * time.Hour
+		config.GhostThreshold = DefaultGhostThreshold
 	}
 	return &Scanner{config: config}
 }

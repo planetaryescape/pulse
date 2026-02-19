@@ -2,6 +2,8 @@ package core
 
 import "time"
 
+const DefaultGhostThreshold = 30 * 24 * time.Hour
+
 type ScanConfig struct {
 	RootPath       string
 	MaxDepth       int
